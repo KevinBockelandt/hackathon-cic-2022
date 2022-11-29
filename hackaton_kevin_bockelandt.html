@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.5.0/lib/p5.js"></script>
+  <title>Hackathon 2022 CIC Lille</title>
+  <style>
+    body {
+      margin: 0;
+      text-align: center;
+      font-size: 1.2rem;
+      font-family: sans-serif;
+      background-color: #1E70C4;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    #page {
+      height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    #container {
+      background-color: white;
+      width: fit-content;
+      margin: 2rem auto;
+      padding: 3rem;
+      border-radius: 2rem;
+    }
+    h1 {
+      margin: 3rem auto;
+      color: white;
+    }
+    form {
+      margin: 2rem;
+    }
+    table {
+      margin: 0 auto 2rem auto;
+      border-spacing: 0.5rem 0.5rem;
+    }
+    .input-label {
+      text-align: right;
+    }
+    .input-field {
+      padding: 0.2rem 0.5rem;
+      text-align: left;
+      border: 1px solid black;
+      width: 200px;
+      height: 1.3rem;
+    }
+    .focused-field {
+      box-shadow: 0px 0px 5px red;
+    }
+    .ok-field {
+      box-shadow: 0px 0px 5px green;
+    }
+    #ok-msg {
+      color: green;
+      border: 1px solid green;
+      border-radius: 10px;
+      padding: 1rem;
+      margin: 2rem auto;
+    }
+    #err-msg {
+      color: red;
+      border: 1px solid red;
+      border-radius: 10px;
+      padding: 1rem;
+      margin: 2rem auto;
+    }
+    footer {
+      font-size: 0.7rem;
+      color: white;
+      margin: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<div id="page">
+  <h1>Hackathon CIC Lille 2022</h1>
+
+  <div id="container">
+    <table id="form-table">
+      <tr>
+        <td class="input-label">Nom</td>
+        <td class="input-field" onclick="onFieldClick(0)"></td>
+      </tr>
+      <tr>
+        <td class="input-label">Prénom</td>
+        <td class="input-field" onclick="onFieldClick(1)"></td>
+      </tr>
+      <tr>
+        <td class="input-label">Adresse mail</td>
+        <td class="input-field" onclick="onFieldClick(2)"></td>
+      </tr>
+      <tr>
+        <td class="input-label">Date de naissance</td>
+        <td class="input-field" onclick="onFieldClick(3)"></td>
+      </tr>
+      <tr>
+        <td class="input-label">Mot de passe</td>
+        <td class="input-field" onclick="onFieldClick(4)"></td>
+      </tr>
+    </table>
+
+    <div id="err-msg">Ceci est un message d'erreur</div>
+    <div id="ok-msg">Ceci est un message ok</div>
+    
+    <main></main>
+  </div>
+</div>
+
+<footer>Kevin Bockelandt décline toute responsabilité pour le temps perdu sur cette page ^_^"</footer>
+
+<!-- Codé intégralement à la main avec amour -->
+
+<script type="text/javascript">
+  p5.disableFriendlyErrors = true;
+
+  // Dimensions related
+  const winSize = { x: 0, y: 0 };
+  let canvaSize = 0;
+  const centerPos = { x: 0, y: 0 };
+
+  // Wheel related
+  const sizeRings = { dead: 0, inner: 0, mid: 0, outer: 0 };
+  const radRings = { dead: 0, inner: 0, mid: 0, outer: 0 };
+  const offsetAngleRings = { inner: 0, mid: 0, outer: 0 };
+
+  // Currently focused input field. This is necessary since we completely handle
+  // them manually instead of using standard HTML methods. Don't try this at home.
+  // 0: nom | 1: prenom | 2: addresseMail | 3: dateNaissance | 4: motDePasse
+  let curInputField;
+
+  // Array of characters used in the wheel
+  const sortedChara = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '@', '/', ' ', '⇧', '⇦'];
+  // randomize order of characters in the array
+  const characters = sortedChara.sort((a, b) => 0.5 - Math.random());
+
+  // True if the shift "key" is active and we use uppercase
+  let isUpperCase = false;
+
+  // True when the form is correctly submited
+  let isSubmissionOk = false;
+
+  // Rotation speed of the rings related
+  const maxSpeedFactor = 8.0;
+  let regularSpeedFactor = 1.0;
+  let curSpeedFactor = 1.0;
+  // Timestamp of the last click on a valid button
+  let lastClickTime = 0;
+  // Duration of the speed up of ring rotation after a valid click (in ms)
+  const speedUpDuration = 1500;
+  // determines the inertia when going from 1 speed to the other
+  let easingSpeedFactor = 0.03;
+
+  // Array of objects describing buttons. Is populated right after
+  const buttons = [];
+
+  setOkMsg(false, '');
+  setErrMsg(0, false, '');
+  recomputeDimensions();
+  setupButtons();
+  setFocusedField(0);
+
+  /**
+   * @brief Returns a random integer between min and max (inclusive)
+   */
+  function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  /**
+   * @brief Compute the sizes and positions of the various elements
+   */
+  function recomputeDimensions() {
+    margin = 2;
+    winSize.x = window.innerWidth;
+    winSize.y = window.innerHeight;
+
+    canvaSize = winSize.y * 0.50;
+    // make sure the wheel don't go over a maximum size
+    canvaSize = canvaSize > 400 ? 400 : canvaSize;
+
+    centerPos.x = canvaSize / 2,
+    centerPos.y = canvaSize / 2,
+
+    sizeRings.dead = (canvaSize - margin) / 4;
+    sizeRings.inner = (canvaSize - margin) / 4 * 2;
+    sizeRings.mid = (canvaSize - margin) / 4 * 3;
+    sizeRings.outer = (canvaSize - margin);
+
+    radRings.dead = sizeRings.dead / 2;
+    radRings.inner = sizeRings.inner / 2;
+    radRings.mid = sizeRings.mid / 2;
+    radRings.outer = sizeRings.outer / 2;
+  }
+
+  /**
+   * @brief Initial setup of the canvas
+   */
+  function setup() {
+    createCanvas(canvaSize, canvaSize);
+    pixelDensity(2);
+    angleMode(DEGREES);
+    rectMode(CENTER);
+    textAlign(CENTER, CENTER);
+    textSize(canvaSize / 20);
+  }
+
+  /**
+   * @brief Populate the array describing buttons of the wheel
+   */
+  function setupButtons() {
+    buttons.length = 0;
+    setupButtonRing(1, 8, radRings.dead, radRings.inner, characters.slice(0, 8));
+    setupButtonRing(2, 14, radRings.inner, radRings.mid, characters.slice(8, 22));
+    setupButtonRing(3, 20, radRings.mid, radRings.outer, characters.slice(22, 42));
+  }
+
+  /**
+   * @brief Create objects describing buttons on a particular ring
+   * @param ringId ID number of the ring we are processing
+   * @param numSteps Number of buttons the current ring
+   * @param radMin Inner radius of the current ring
+   * @param radMax Outer radius of the current ring
+   * @param chars Array of characters to display on the ring
+   */
+  function setupButtonRing(ringId, numSteps, radMin, radMax, chars) {
+    // for the number of buttons on the ring
+    for (let i = 0; i < numSteps; ++i) {
+      const angle = 360 / numSteps * i;
+      const finalRadText = radMin + (radMax - radMin) / 2;
+
+      buttons.push({
+        ringId: ringId,
+        chara: chars[i],
+        radMin: radMin,
+        radMax: radMax,
+        rad: radMin + (radMax - radMin) / 2,
+        angleMin: angle - (360 / numSteps) / 2,
+        angleMax: angle + (360 / numSteps) / 2,
+        angle: angle,
+      });
+    }
+  }
+
+  /**
+   * @brief Redraw the content of the canvas every frame
+   */
+  function draw() {
+    // console.log('fps: ', frameRate());
+
+    // fully erase content of the canvas
+    clear();
+
+    // compute the new speed factor for the rotation of rings
+    const targetSpeed = Date.now() - lastClickTime < speedUpDuration ? maxSpeedFactor : regularSpeedFactor;
+    const tempSpeed = targetSpeed - curSpeedFactor;
+    curSpeedFactor += tempSpeed * easingSpeedFactor;
+
+    // update these values to rotate the rings
+    offsetAngleRings.inner += (0.1 * curSpeedFactor);
+    offsetAngleRings.mid -= (0.15 * curSpeedFactor);
+    offsetAngleRings.outer += (0.2 * curSpeedFactor);
+
+    // create outline for the rings
+    ellipse(centerPos.x, centerPos.y, sizeRings.outer, sizeRings.outer);
+    ellipse(centerPos.x, centerPos.y, sizeRings.mid, sizeRings.mid);
+    ellipse(centerPos.x, centerPos.y, sizeRings.inner, sizeRings.inner);
+    ellipse(centerPos.x, centerPos.y, sizeRings.dead, sizeRings.dead);
+
+    // render the buttons
+    buttons.forEach(e => {
+      let offAng = offsetAngleRings.inner;
+      if (e.ringId === 2) offAng = offsetAngleRings.mid;
+      else if (e.ringId === 3) offAng = offsetAngleRings.outer;
+
+      line(
+        centerPos.x + e.radMin * cos(e.angleMin + offAng),
+        centerPos.y + e.radMin * sin(e.angleMin + offAng),
+        centerPos.x + e.radMax * cos(e.angleMin + offAng),
+        centerPos.y + e.radMax * sin(e.angleMin + offAng)
+      );
+
+      text(
+        isUpperCase ? e.chara.toUpperCase() : e.chara.toLowerCase(),
+        centerPos.x + e.rad * cos(e.angle + offAng),
+        centerPos.y + e.rad * sin(e.angle + offAng),
+      );
+    });
+
+    // manually render the center button
+    if (isSubmissionOk) {
+      textSize(canvaSize / 10);
+      text('✔', centerPos.x, centerPos.y);
+    } else {
+      text('Valider', centerPos.x, centerPos.y);
+    }
+
+    textSize(canvaSize / 20);
+  }
+
+  /**
+   * @brief Automatically called when a mouse button is released
+   */
+  function mouseReleased() {
+    // if the form is already ok, don't handle anything anymore
+    if (isSubmissionOk) return;
+
+    const mx = mouseX - canvaSize / 2;
+    const my = mouseY - canvaSize / 2;
+
+    const rad = Math.sqrt(mx*mx + my*my);
+    let a = Math.atan2(my, mx) * 180 / Math.PI;
+    // adjust angle because... maths?
+    if (my < 0) a += 360;
+
+    // if we are in the dead center of the wheel
+    if (rad <= radRings.dead) {
+      lastClickTime = Date.now();
+      centralButtonClick();
+      return;
+    }
+
+    // go through each button to check if one was clicked
+    buttons.forEach(e => {
+      // get the offset angle that depends on the ring
+      let offAng = offsetAngleRings.inner;
+      if (e.ringId === 2) offAng = offsetAngleRings.mid;
+      else if (e.ringId === 3) offAng = offsetAngleRings.outer;
+
+      // make sure we have a value in the range 0 - 360. This is necessary
+      // since the spinning never stops and values will continue to grow
+      let aMin = (e.angleMin + offAng) % 360;
+      let aMax = (e.angleMax + offAng) % 360;
+
+      // modulo operation can lead to strange things
+      if (aMin > aMax) aMin -= 360;
+
+      if (aMax < 0 || aMin < 0) {
+        aMin += 360;
+        aMax += 360;
+      }
+
+      // Create booleans to know if the angle of this button matches with the
+      // angle of the click. The adjusted trick is because I'm bad at math and
+      // man those spinning rings are so tricky T_T
+      // There is probably a cleaner way of doing this.
+      const isInAngle = (a <= aMax && a >= aMin);
+      const isInAdjustedAngle = (a + 360 <= aMax && a + 360 >= aMin);
+
+      // if this button was indeed clicked
+      if (rad <= e.radMax && rad >= e.radMin && (isInAngle || isInAdjustedAngle)) {
+        lastClickTime = Date.now();
+
+        // shift "key" is handled separately
+        if (e.chara === '⇧') {
+          isUpperCase = isUpperCase ? false : true;
+        } else {
+          // get the field element and update the content
+          const field = document.getElementById('form-table')
+            .getElementsByClassName('input-field')[curInputField];
+          const fieldContent = field.innerHTML;
+
+          if (e.chara === '⇦') {
+            field.innerHTML = fieldContent.slice(0, fieldContent.length - 1);
+          } else {
+            const c = isUpperCase ? e.chara.toUpperCase() : e.chara.toLowerCase();
+            field.innerHTML = fieldContent + c;
+          }
+        }
+
+        return;
+      }
+    });
+  }
+
+  /**
+   * @brief Handle a click on the central wheel button
+   */
+  function centralButtonClick() {
+    // reset any existing error message
+    setErrMsg(curInputField, false, '');
+
+    const fields = document.getElementById('form-table')
+      .getElementsByClassName('input-field');
+
+    // vérifie que les champs ne sont pas vides
+    if (fields[0].innerHTML.length === 0) {
+      setErrMsg(0, true, 'Le champ "Nom" ne peut pas être vide');
+    } else if (fields[1].innerHTML.length === 0) {
+      setErrMsg(1, true, 'Le champ "Prénom" ne peut pas être vide');
+    } else if (fields[2].innerHTML.length === 0) {
+      setErrMsg(2, true, 'Le champ "Adresse mail" ne peut pas être vide');
+    } else if (fields[3].innerHTML.length === 0) {
+      setErrMsg(3, true, 'Le champ "Date de naissance" ne peut pas être vide');
+    } else if (fields[4].innerHTML.length === 0) {
+      setErrMsg(4, true, 'Le champ "Mot de passe" ne peut pas être vide');
+    } else {
+      // vérifie le format de l'addresse mail
+      if (getNumCharaInStr('@', fields[2].innerHTML) != 1) {
+        setErrMsg(2, true, "L'adresse email doit contenir un '@'");
+      } else if (getNumCharaInStr('.', fields[2].innerHTML) < 1) {
+        setErrMsg(2, true, "L'adresse email doit contenir au moins un '.'");
+      } else {
+        // vérifie le format de la date de naissance
+        const dn = fields[3].innerHTML;
+        if (dn.length < 10) {
+          setErrMsg(3, true, "La date doit être au format 'dd/mm/yyyy'");
+        } else if (
+          !isDigit(dn[0]) ||
+          !isDigit(dn[1]) ||
+          dn[2] != '/' ||
+          !isDigit(dn[3]) ||
+          !isDigit(dn[4]) ||
+          dn[5] != '/' ||
+          !isDigit(dn[6]) ||
+          !isDigit(dn[7]) ||
+          !isDigit(dn[8]) ||
+          !isDigit(dn[9])
+        ) {
+          setErrMsg(3, true, "La date doit être au format 'dd/mm/yyyy'");
+        } else {
+          const pw = fields[4].innerHTML;
+          // vérifie le format du mot de passe
+          if (pw.length < 8) {
+            setErrMsg(4, true, "Le mot de passe doit faire 8 caractères minimum");
+          } else {
+            // tout est ok
+            regularSpeedFactor = 0.0;
+            isSubmissionOk = true;
+            setOkMsg(true, '🥳 Félicitations, le formulaire est complet ! 🥳');
+            document.getElementById('form-table')
+              .getElementsByClassName('input-field')
+              .forEach(e => e.className = 'input-field ok-field');
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * @brief Returns true if the given character is a single digit
+   * @param c The character to check
+   */
+  function isDigit(c) {
+    return c === '0' || c === '1' || c === '2' || c === '3' || c === '4' || c === '5' || c === '6' || c === '7' || c === '8' || c === '9';
+  }
+
+  /**
+   * @brief Returns the number of occurrences of the given chara in the given string
+   * @param chara The character to look for
+   * @param str The string in which to look
+   */
+  function getNumCharaInStr(chara, str) {
+    let count = 0;
+    for (let i = 0; i < str.length; ++i) {
+      count = str[i] === chara ? count + 1 : count;
+    }
+    return count;
+  }
+
+  /**
+   * @brief Handle a click on an input field
+   * @param fieldNum Id number of the field associated with the error
+   */
+  function onFieldClick(fieldNum) {
+    if (!isSubmissionOk) setErrMsg(fieldNum, false, '');
+  }
+
+  /**
+   * @brief Toggle visibility of the error message
+   * @param fieldNum Id number of the field associated with the error
+   * @param isVisible True if it's visible
+   * @param msg Content of the message
+   */
+  function setErrMsg(fieldNum, isVisible, msg) {
+    setFocusedField(fieldNum);
+    const errMsg = document.getElementById('err-msg');
+
+    errMsg.style.display = isVisible ? 'block' : 'none';
+    errMsg.innerHTML = msg;
+  }
+
+  /**
+   * @brief Toggle visibility of the ok message
+   * @param isVisible True if it's visible
+   * @param msg Content of the message
+   */
+  function setOkMsg(isVisible, msg) {
+    const okMsg = document.getElementById('ok-msg');
+    okMsg.style.display = isVisible ? 'block' : 'none';
+    okMsg.innerHTML = msg;
+  }
+
+  /**
+   * @brief Automatically called if the window is resized
+   */
+  function windowResized() {
+    recomputeDimensions();
+    setupButtons();
+    resizeCanvas(canvaSize, canvaSize);
+  }
+
+  /**
+   * @brief Change the input field currently focused on
+   * @param fieldNum Id number of the field to focus
+   */
+  function setFocusedField(fieldNum) {
+    curInputField = fieldNum;
+
+    const fields = document.getElementById('form-table')
+      .getElementsByClassName('input-field');
+
+    // reset classes of every input field
+    fields.forEach(e => e.className = 'input-field');
+
+    // add class to indicate focus on the new focused field
+    fields[curInputField].className = 'input-field focused-field';
+  }
+</script>
+
+</body>
+</html>
